@@ -85,6 +85,14 @@ def create_handler(service, rules, static_dir):
                         return self._send_html(200, handle.read())
                 if parts == ["api", "audit"]:
                     return self._send(200, {"items": service.audit_log()})
+                if parts == ["api", "review-todos"]:
+                    query = parse_qs(parsed.query)
+                    status = query.get("status", [None])[0]
+                    return self._send(200, {"items": service.list_review_todos(status=status)})
+                if parts == ["api", "recalc-jobs"]:
+                    query = parse_qs(parsed.query)
+                    status = query.get("status", [None])[0]
+                    return self._send(200, {"items": service.list_recalc_jobs(status=status)})
                 if len(parts) == 3 and parts[:2] == ["api", "entities"]:
                     return self._send(200, service.get(parts[2]))
                 if len(parts) >= 2 and parts[0] == "api":
@@ -116,7 +124,7 @@ def create_handler(service, rules, static_dir):
                     expected = body.pop("expected_version", None)
                     return self._send(
                         200,
-                        service.transition(actor, parts[2], action, data, expected),
+                        service.dispatch(actor, parts[2], action, data, expected),
                     )
                 if len(parts) == 4 and parts[0] == "api" and parts[3] == "actions":
                     body = self._body()
@@ -125,7 +133,7 @@ def create_handler(service, rules, static_dir):
                         raise ValidationError("action is required")
                     return self._send(
                         200,
-                        service.transition(
+                        service.dispatch(
                             actor,
                             parts[2],
                             action,
@@ -136,8 +144,18 @@ def create_handler(service, rules, static_dir):
                 if len(parts) == 5 and parts[0] == "api" and parts[4] == "actions":
                     return self._send(
                         200,
-                        service.transition(actor, parts[2], parts[3], self._body(), None),
+                        service.dispatch(actor, parts[2], parts[3], self._body(), None),
                     )
+                if len(parts) == 4 and parts[:2] == ["api", "review-todos"] and parts[3] == "close":
+                    body = self._body()
+                    return self._send(
+                        200,
+                        service.close_review_todo(
+                            parts[2], actor, body.get("decision"), body.get("comment")
+                        ),
+                    )
+                if parts == ["api", "checks", "run"]:
+                    return self._send(200, service.run_checks())
                 if len(parts) == 2 and parts[0] == "api":
                     body = self._body()
                     idem = self.headers.get("Idempotency-Key")
