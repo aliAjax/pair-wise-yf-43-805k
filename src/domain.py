@@ -27,6 +27,28 @@ class InvalidTransition(DomainError):
     """The requested state transition is not valid."""
 
 
+class CalibrationOverlapError(ConflictError):
+    """Two calibration records of one instrument cover overlapping dates.
+
+    The commit must stop and wait for an explicit comparison decision;
+    neither record may silently overwrite the other.
+    """
+
+    def __init__(
+        self,
+        message,
+        instrument_id=None,
+        incoming_calibration_id=None,
+        existing_calibration_id=None,
+        intervals=None,
+    ):
+        super().__init__(message)
+        self.instrument_id = instrument_id
+        self.incoming_calibration_id = incoming_calibration_id
+        self.existing_calibration_id = existing_calibration_id
+        self.intervals = intervals or {}
+
+
 class Role(str, Enum):
     viewer = "viewer"
     admin = "admin"
@@ -34,6 +56,7 @@ class Role(str, Enum):
     metrology = "metrology"
     authorizer = "authorizer"
     analyst = "analyst"
+    system = "system"
 
 
 @dataclass

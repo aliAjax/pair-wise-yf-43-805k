@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from .domain import (
+    CalibrationOverlapError,
     ConflictError,
     DomainError,
     InvalidTransition,
@@ -63,7 +64,7 @@ def create_handler(service, rules, static_dir):
                 status = 403
             elif isinstance(exc, NotFoundError):
                 status = 404
-            elif isinstance(exc, (ConflictError, InvalidTransition)):
+            elif isinstance(exc, (ConflictError, InvalidTransition, CalibrationOverlapError)):
                 status = 409
             elif isinstance(exc, ValidationError):
                 status = 400
@@ -85,6 +86,25 @@ def create_handler(service, rules, static_dir):
                         return self._send_html(200, handle.read())
                 if parts == ["api", "audit"]:
                     return self._send(200, {"items": service.audit_log()})
+                if parts == ["api", "reviews"]:
+                    query = parse_qs(parsed.query)
+                    status = query.get("status", ["open"])[0]
+                    kind = query.get("kind", [None])[0]
+                    if status == "all":
+                        status = None
+                    return self._send(
+                        200, {"items": service.list_reviews(status=status, kind=kind)}
+                    )
+                if len(parts) == 3 and parts[:2] == ["api", "reviews"]:
+                    return self._send(200, service.get_review(parts[2]))
+                if parts == ["api", "pending"]:
+                    query = parse_qs(parsed.query)
+                    status = query.get("status", [None])[0]
+                    return self._send(
+                        200, {"items": service.list_pending(status=status)}
+                    )
+                if len(parts) == 4 and parts[:2] == ["api", "entities"] and parts[3] == "chain":
+                    return self._send(200, service.evaluate_result(parts[2]))
                 if len(parts) == 3 and parts[:2] == ["api", "entities"]:
                     return self._send(200, service.get(parts[2]))
                 if len(parts) >= 2 and parts[0] == "api":
@@ -107,6 +127,39 @@ def create_handler(service, rules, static_dir):
                 parsed = urlparse(self.path)
                 parts = [part for part in parsed.path.split("/") if part]
                 actor = self._actor()
+                if parts == ["api", "reconcile"]:
+                    return self._send(200, service.reconcile(actor))
+                if parts == ["api", "pending", "drain"]:
+                    return self._send(200, service.drain_pending())
+                if (
+                    len(parts) == 4
+                    and parts[0] == "api"
+                    and parts[1] == "reviews"
+                    and parts[3] == "resolve"
+                ):
+                    body = self._body()
+                    return self._send(
+                        200,
+                        service.resolve_review(
+                            actor,
+                            parts[2],
+                            body.get("decision"),
+                            body.get("reason", ""),
+                        ),
+                    )
+                if (
+                    len(parts) == 4
+                    and parts[0] == "api"
+                    and parts[1] == "pending"
+                    and parts[3] == "cancel"
+                ):
+                    body = self._body()
+                    return self._send(
+                        200,
+                        service.cancel_pending(
+                            actor, parts[2], body.get("reason", "")
+                        ),
+                    )
                 if len(parts) == 3 and parts[:2] == ["api", "entities"]:
                     body = self._body()
                     action = body.pop("action", None)
